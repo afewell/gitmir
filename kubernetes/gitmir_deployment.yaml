@@ -1,0 +1,23 @@
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: gitmir-deployment
+  namespace: gitmir
+  labels:
+    app: gitmir
+    deployment: gitmir
+spec:
+  selector:
+    matchLabels:
+      app: gitmir
+  replicas: 1 # tells deployment to run 2 pods matching the template
+  template:
+    metadata:
+      labels:
+        app: gitmir
+    spec:
+      containers:
+      - name: gitmir
+        image: pksninjalabs/gitmir:0.8
+        ports:
+        - containerPort: 80
