@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "starting gitmir run at time: $(date +"%T")" | tee -a /root/gitmirrun.log
-gitmirVersion="gitmir-0.8"
+gitmirVersion="gitmir-0.10"
 echo $gitmirVersion
 ######## Save initial user inputs in a variable
 userInputs="$@"
@@ -126,7 +126,7 @@ function initGitmir
             mkdir -p $GITMIRROOT/$orgLowerCase
             chown -R daemon:daemon $GITMIRROOT/$orgLowerCase
             echo "beginning cloning for all public repos under github org: $orgLowerCase at time: $(date +"%T")" 
-            for repo in $(curl -H "Authorization: token $GITHUBOAUTHTOKEN" https://api.github.com/orgs/$orgLowerCase/repos?type=public | jq -r '.[].name')
+            for repo in $(curl -u $GITHUBOAUTHTOKEN https://api.github.com/orgs/$orgLowerCase/repos?type=public | jq -r '.[].name')
             do
                 repo=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
                 echo "entering the initGitmir case 1 for repo block"
@@ -183,7 +183,7 @@ function updateGitmir
     case $numParametersEntered in
         1)
             echo "you passed 1 parameter to updateGitmir"
-            for repo in $(curl -H "Authorization: token $GITHUBOAUTHTOKEN" https://api.github.com/orgs/$orgLowerCase/repos?type=public | jq -r '.[].name')
+            for repo in $(curl -u $GITHUBOAUTHTOKEN https://api.github.com/orgs/$orgLowerCase/repos?type=public | jq -r '.[].name')
             do
                 repo=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
                 echo "$repo"
@@ -240,8 +240,8 @@ function orgExists
     # If $orgInput value provided, get exact case & lower case values
     orgApiUrl="https://api.github.com/orgs/$orgInput"
     echo "$orgApiUrl"
-    echo "curl command: curl -H "Authorization: token $GITHUBOAUTHTOKEN" $orgApiUrl | jq -r \'.login\''"
-    orgGithubCase=$(curl -H "Authorization: token $GITHUBOAUTHTOKEN" $orgApiUrl | jq -r '.login')
+    echo "curl command: curl -u $GITHUBOAUTHTOKEN $orgApiUrl | jq -r '.login'"
+    orgGithubCase=$(curl -u $GITHUBOAUTHTOKEN $orgApiUrl | jq -r '.login')
     echo "orgGithubCase=$orgGithubCase"
     orgLowerCase=$(echo "$orgGithubCase" | tr '[:upper:]' '[:lower:]')
     echo "orgLowerCase=$orgLowerCase"
@@ -253,7 +253,7 @@ function orgExists
         # If the Org Does Not exist
         repoApiUrl="https://api.github.com/repos/$orgInput/$repoInput"
         echo "repoApiUrl=$repoApiUrl"
-        repoGithubCase=$(curl -H "Authorization: token $GITHUBOAUTHTOKEN" $repoApiUrl | jq -r '.name')
+        repoGithubCase=$(curl -u $GITHUBOAUTHTOKEN $repoApiUrl | jq -r '.name')
         repoLowerCase=$(echo "$repoGithubCase" | tr '[:upper:]' '[:lower:]')
         echo "repoLowerCase=$repoLowerCase"
     fi

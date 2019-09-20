@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
       - name: gitmir
-        image: pksninjalabs/gitmir:0.8
+        image: pksninjalabs/gitmir:0.10
         ports:
         - containerPort: 80
           name: gitmir-port
