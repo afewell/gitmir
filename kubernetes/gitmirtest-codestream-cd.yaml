@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitmir
+  namespace: gitmir
+---  
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitmir-lb-service
+  namespace: gitmir
+  labels:
+    app: gitmir
+spec:
+  ports:
+    - port: 80
+  selector:
+    app: gitmir
+  type: LoadBalancer 
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: gitmir-deployment
+  namespace: gitmir
+  labels:
+    app: gitmir
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitmir
+  template:
+    metadata:
+      labels:
+        app: gitmir
+    spec:
+      containers:
+      - name: gitmir
+        image: pksninjalabs/gitmir:0.10
+        ports:
+        - containerPort: 80
+          name: gitmir-port
