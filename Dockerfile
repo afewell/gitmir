@@ -21,7 +21,7 @@ ADD root/.feederFile.json /root/feederFile.json
 ADD root/.start.sh /root/start.sh
 ADD root/.httpd.conf /usr/local/apache2/conf/httpd.conf
 ADD root/.callGitmir.cgi /usr/local/apache2/cgi-bin/callGitmir.cgi
-ADD root/gitmir-github-api /root/.token
+RUN curl https://pksninja-bucket.s3.us-east-2.amazonaws.com/gitmir-github-api -o /root/.token
 ADD root/.index.html /usr/local/apache2/htdocs/index.html
 
 #Set gitmir as executable
