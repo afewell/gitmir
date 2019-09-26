@@ -21,7 +21,7 @@ ADD root/.feederFile.json /root/feederFile.json
 ADD root/.start.sh /root/start.sh
 ADD root/.httpd.conf /usr/local/apache2/conf/httpd.conf
 ADD root/.callGitmir.cgi /usr/local/apache2/cgi-bin/callGitmir.cgi
-ADD root/.token /root/.token
+ADD root/gitmir-github-api /root/.token
 ADD root/.index.html /usr/local/apache2/htdocs/index.html
 
 #Set gitmir as executable
