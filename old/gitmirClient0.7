@@ -1,0 +1,494 @@
+#!/bin/bash
+gitmirVersion="0.6"
+echo $gitmirVersion
+######## Save initial user inputs in a variable
+userInputs="$@"
+echo "The user inputs are: $userInputs"
+
+######## Declare global variables
+orgInput=""
+repoInput=""
+branchInput=""
+orgInitialized=0
+repoInitialized=0
+numParametersEntered=$#
+orgGithubCase=""
+repoGithubCase=""
+branchGithubCase=""
+orgApiUrl=""
+repoApiUrl=""
+branchApiUrl=""
+
+######## Initialize functions
+
+function flagHandler
+# handles flags: calls helpMenu when -h flag passed; returns error message and exits if erroneous flag passed
+{
+    local OPTIND
+    while getopts ":hvf:" opt; do
+    case "${opt}" in
+        h)
+        echo "calling helpMenu"
+        helpMenu
+        exit 0
+        ;;
+        f)
+        echo "calling filehandler $OPTARG"
+        fileHandler $OPTARG
+        wait
+        echo "Gitmer has finished processing each of the specified records in the $OPTARG file"
+        exit 0
+        ;;
+        v)
+        echo "gitmir version: $gitmirVersion"
+        exit 0
+        ;;
+        ?)
+        echo "Invalid Option: -$OPTARG" 1>&2
+        exit 1
+        ;;
+    esac
+    done
+    shift $((OPTIND-1))
+}
+
+function helpMenu
+# Echos the help menu to stdout
+{
+  echo "Thank you for using gitmir, all mirrored repositories can be found at /gitmir/{org_name}/{repo_name}"
+  echo "Usage:"
+  echo "    gitmir -h                                                       Display this help message."
+  echo "    gitmir -v                                                       Display gitmir version number."
+  echo "    gitmir <github_org_name>                                        Required: Github Org (or user) Name. If org name is the only value provided, gitmir will, as appropriate, clone or fetch/merge all repos and fetch/merge all branches in the org."
+  echo "    gitmir <github_user_name>                                       Required: Github Username (or org name). If username is the only value provided, gitmir will, as appropriate, clone or fetch/merge all repos and branches under the users account."
+  echo "    gitmir <github_org_name> <github_repo_name>                     Include github repository name and gitmir will, as appropriate, clone or fetch/merge all branches of a single repository."
+  echo "    gitmir <github_org_name> <github_repo_name> <branch name>       Include branch name and gitmir will, as appropriate, clone or fetch/merge the specified branch from the specified repository"
+  echo "    gitmir  -f <feeder_file_name>                                   Accepts a json file with a list of repos/orgs/branches, gitmir will parse the records and call gitmir for each specified org, repo and/or branch. Please see the gitmir readme or exampleFeederFile.json for file format requirements"
+  echo "Examples:"
+  echo "    gitmir cna-tech                                 This command would, as appropriate, clone or fetch/merge every repository and branch within the cna-tech github organization."
+  echo "    gitmir cna-tech pks-ninja                       This command would, as appropriate, clone or fetch/merge each branch of the cna-tech/pks-ninja github repository."
+  echo "    gitmir cna-tech pks-ninja master                This command would, as appropriate, clone or fetch/merge only the master branch of the cna-tech/pks-ninja github repository."
+  echo "    gitmir -f exampleFeederFile.json                This command would, as appropriate, clone or fetch/merge every org, repository and branch specified in exampleFeederFile.json."
+  return
+}
+
+function isOrgInitialized
+#check if gitmir has already been initialized for the provided org name
+{
+    # The following if statement sets the orgInitialized value to -1 if org directory present or 0 if org directory not present, as determined by whether a value was returned in the above find commands
+    if [ -d "/gitmir/$orgGithubCase" ]
+    then
+        echo "gitmir has already initialized the org $orgGithubCase"
+        orgInitialized=-1
+        echo "the value for orgInitialized is: $orgInitialized"
+        return
+    else
+    echo "gitmir has not yet been initialized for the org $orgGithubCase"
+    orgInitialized=0
+    echo "the value for orgInitialized is: $orgInitialized"
+    return
+    fi
+}
+
+function isRepoInitialized
+#check if gitmir has already been initialized for the provided repo name
+{
+    # The following if statement resets the repoInitialized value to -1 if repo directory present or 0 if repo directory not present, as determined by whether a value was returned in the above find commands
+    if [ -d "/gitmir/$orgGithubCase/$repoGithubCase" ]
+    then
+        echo "gitmir has already initialized the repo $orgGithubCase/$repoGithubCase"
+        repoInitialized=-1
+        echo "the value for repoInitialized is: $repoInitialized"
+        return
+    else
+    echo "gitmir has not yet been initialized for the repo $orgGithubCase/$repoGithubCase"
+    repoInitialized=0
+    echo "the value for repoInitialized is: $repoInitialized"
+    return
+    fi
+}
+
+function initGitmir
+# Usage: initGitmir <required_org_name> <optional_repo_name> <optional_branch_name>
+{
+    echo "beginning initGitmir function execution"    
+    # select case to identify proper workflow for the amount of parameters
+    # if $numParametersEntered=1 the only value provided should be the org name
+    # if $numParametersEntered=2 both an org name and repo should be the values provided
+    # if $numParametersEntered=3 an org, repo and branch name should be the values provided
+    case $numParametersEntered in
+        1)
+            echo "you passed 1 parameter to initGitmir"
+            echo "creating the /gitmir/$orgGithubCase directory"
+            mkdir -p /gitmir/$orgGithubCase
+            echo "beginning cloning for all public repos under github org: $orgGithubCase at time: $(date +"%T")" 
+            for repo in $(curl https://api.github.com/orgs/$orgGithubCase/repos?type=public | jq -r '.[].name')
+            do
+                echo "entering the initGitmir case 1 for repo block"
+                echo "executing command: cd /gitmir/$orgGithubCase"
+                cd /gitmir/$orgGithubCase
+                echo "executing command: git clone https://github.com/$orgGithubCase/$repo.git"
+                git clone https://github.com/$orgGithubCase/$repo.git
+                echo "executing command:cd /gitmir/$orgGithubCase/$repo"
+                cd /gitmir/$orgGithubCase/$repo
+                echo "Completed initial clone of repo: $repo at time: $(date +"%T")"
+                echo "Begining fetch/merge process for all branches in $orgGithubCase/$repo"
+                echo "completed the initGitmir case 1 for repo block, continuing"
+                for branch in $(curl https://api.github.com/repos/$orgGithubCase/$repo/branches | jq -r '.[].name')
+                do
+                    echo "entering the initGitmir case 1 for branch block"
+                    echo "Beginning Fetch and Merge Process for $orgGithubCase/$repo:$branch at time: $(date +"%T")"
+                    cd /gitmir/$orgGithubCase/$repo/
+                    git fetch origin $branch
+                    git checkout $branch
+                    git merge origin/$branch
+                    echo "Completed Fetch and Merge Process for $org/$repo:$branch at time: $(date +"%T")"
+                    echo "completed the initGitmir case 1 for branch block" 
+                done
+            echo "Completed Fetch and Merge Process for all branches in $orgGithubCase/$repo at time: $(date +"%T")" 
+            done
+            echo "Completed Cloning Process for all repos and branches in the $orgGithubCase org at time: $(date +"%T")" 
+            return
+            ;;
+        2)
+            # if a repo has already been initialized, it will be handled by the updateGitmir function. 
+            # accordingly, this function only needs to consider uninitiated repos
+            echo "you passed 2 parameters to initGitmir"
+            echo "creating the /gitmir/$orgGithubCase directory"
+            mkdir -p /gitmir/$orgGithubCase
+            cd /gitmir/$orgGithubCase
+            echo "beginning cloning for the $orgGithubCase/$repoGithubCase repository from github at time: $(date +"%T")" 
+            git clone https://github.com/$orgGithubCase/$repoGithubCase.git
+            cd /gitmir/$orgGithubCase/$repoGithubCase
+            echo "Completed initial clone of repo: $repoGithubCase at time: $(date +"%T")"
+            echo "Begining fetch/merge process for all branches in $orgGithubCase/$repoGithubCase" 
+            for branch in $(curl https://api.github.com/repos/$orgGithubCase/$repoGithubCase/branches | jq -r '.[].name')
+            do
+                echo "Beginning Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branch at time: $(date +"%T")" 
+                cd /gitmir/$orgGithubCase/$repoGithubCase/
+                git fetch origin $branch
+                git checkout $branch
+                git merge origin/$branch
+                echo "Completed Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branch at time: $(date +"%T")" 
+            done
+            return
+            ;;
+        3)
+            echo "you passed 3 parameters to initGitmir"
+            if [ $repoInitialized = -1 ]
+            then
+                echo "Beginning Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branchGithubCase at time: $(date +"%T")" 
+                cd /gitmir/$orgGithubCase/$repoGithubCase/
+                git fetch origin $branchGithubCase
+                git checkout $branchGithubCase
+                git merge origin/$branchGithubCase
+                echo "Completed Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branchGithubCase at time: $(date +"%T")" 
+            elif [ $repoInitialized = 0 ]
+            then
+                echo "creating the /gitmir/$orgGithubCase directory"       
+                mkdir -p /gitmir/$orgGithubCase
+                cd /gitmir/$orgGithubCase
+                echo "beginning cloning for the $orgGithubCase/$repoGithubCase repository from github at time: $(date +"%T")" 
+                git clone https://github.com/$orgGithubCase/$repoGithubCase.git
+                echo "Completed initial clone of repo: $repoGithubCase at time: $(date +"%T")"
+                echo "Beginning Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branchGithubCase at time: $(date +"%T")" 
+                cd /gitmir/$orgGithubCase/$repoGithubCase/
+                git fetch origin $branchGithubCase
+                git checkout $branchGithubCase
+                git merge origin/$branchGithubCase
+                echo "Completed Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branchGithubCase at time: $(date +"%T")"
+            else
+                echo "unknown condition encountered, initGitmir case 3"
+                exit 1
+            fi
+            return
+            ;;
+    esac
+}
+
+function updateGitmir
+## updateGitmir updates does a fetch and merge to update orgs that have already been initialized. 
+## updateGitmir handles all cases where the org has been initialized. In cases where an org has already been initialized but a desired repo has not been initialized, updateGitmir will 
+{
+    echo "beginning updateGitmir function execution"
+    # select case to identify proper workflow for the amount of parameters
+    # if $numParametersEntered=1 the only value provided should be the org name
+    # if $numParametersEntered=2 both an org name and repo should be the values provided
+    # if $numParametersEntered=3 an org, repo and branch name should be the values provided
+    case $numParametersEntered in
+        1)
+            echo "you passed 1 parameter to updateGitmir"
+            for repo in $(curl https://api.github.com/orgs/$orgGithubCase/repos?type=public | jq -r '.[].name')
+            do
+                #need a condition here to determine if the repo has been initialized
+                if [ ! -d "/gitmir/$orgGithubCase/$repo" ]
+                then
+                    echo "the org specified has been initialized, but the repo: $repo has not. Beginning initialization for repo: $repo"
+                    echo "beginning cloning for the $orgGithubCase/$repoGithubCase repository from github at time: $(date +"%T")" 
+                    git clone https://github.com/$orgGithubCase/$repoGithubCase.git
+                    echo "Completed initial clone of repo: $repoGithubCase at time: $(date +"%T")"
+                fi
+                cd /gitmir/$orgGithubCase/$repo
+                echo "Begining fetch/merge process for all branches in $orgGithubCase/$repo" 
+                for branch in $(curl https://api.github.com/repos/$orgGithubCase/$repo/branches | jq -r '.[].name')
+                do
+                    echo "Beginning Fetch and Merge Process for $orgGithubCase/$repo:$branch at time: $(date +"%T")" 
+                    cd /gitmir/$orgGithubCase/$repo/
+                    git fetch origin $branch
+                    git checkout $branch
+                    git merge origin/$branch
+                    echo "Completed Fetch and Merge Process for $orgGithubCase/$repo:$branch at time: $(date +"%T")" 
+                done
+            echo "Completed Fetch and Merge Process for all branches in $orgGithubCase/$repo at time: $(date +"%T")" 
+            done
+            echo "Completed Cloning Process for all repos and branches in the $orgGithubCase org at time: $(date +"%T")" 
+            return
+            ;;
+        2)
+            echo "you passed 2 parameters to initGitmir"
+            cd /gitmir/$orgGithubCase/$repoGithubCase
+            echo "Begining fetch/merge process for all branches in $orgGithubCase/$repoGithubCase" 
+            for branch in $(curl https://api.github.com/repos/$orgGithubCase/$repoGithubCase/branches | jq -r '.[].name')
+            do
+                echo "Beginning Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branch at time: $(date +"%T")" 
+                cd /gitmir/$orgGithubCase/$repoGithubCase/
+                git fetch origin $branch
+                git checkout $branch
+                git merge origin/$branch
+                echo "Completed Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branch at time: $(date +"%T")" 
+            done
+            echo "Completed Fetch and Merge Process for all branches in $orgGithubCase/$repoGithubCase at time: $(date +"%T")"
+            return
+            ;;
+        3)
+            echo "you passed 3 parameters to initGitmir"
+            echo "Beginning Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branchGithubCase at time: $(date +"%T")" 
+            cd /gitmir/$orgGithubCase/$repoGithubCase/
+            git fetch origin $branchGithubCase
+            git checkout $branchGithubCase
+            git merge origin/$branchGithubCase
+            echo "Completed Fetch and Merge Process for $orgGithubCase/$repoGithubCase:$branchGithubCase at time: $(date +"%T")" 
+            return
+            ;;
+    esac    
+}
+
+function orgExists
+# orgExists recieves github org name as a required parameter and branch and/or repo names as optional parameters
+# orgExists calls github api to verify org (or repo and branch if provided) exists, if exists continue, else echo error string to stdout and exit 1
+# usage: orgExists <github org name>
+{
+    echo "beginning orgExists function"
+
+    ## Use $orgInput to query the github api which is not case sensitive query, but returns the exact case used by github, which is important for file system operations.
+    # If the Org Does Not exist, null value will be returned
+    orgApiUrl="https://api.github.com/orgs/$orgInput"
+    echo "$orgApiUrl"
+    orgGithubCase=$(curl $orgApiUrl | jq -r '.login')
+    echo "orgGithubCase=$orgGithubCase"
+
+    # If $repoInput and/or $branchInput value provided, get exact case values
+    if [ $numParametersEntered -ge 2 ]
+    then
+        # Use $repoInput to query the github api which is not case sensitive query, but returns the exact case used by github, which is important for file system operations.
+        # If the Org Does Not exist
+        repoApiUrl="https://api.github.com/repos/$orgInput/$repoInput"
+        echo "repoApiUrl=$repoApiUrl"
+        repoGithubCase=$(curl $repoApiUrl | jq -r '.name')
+        echo "repoGithubCase=$repoGithubCase"
+        if [ $numParametersEntered == 3 ]
+        then
+            branchApiUrl="https://api.github.com/repos/$orgInput/$repoInput/branches/$branchInput"
+            echo "branchApiUrl=$branchApiUrl"
+            branchGithubCase=$(curl $branchApiUrl | jq -r '.name')
+            echo "branchGithubCase=$branchGithubCase"
+        fi
+    fi
+
+
+
+    # select case to identify proper workflow for the amount of parameters
+    # if $numParametersEntered=1 the only value provided should be the org name
+    # if $numParametersEntered=2 both an org name and repo should be the values provided
+    # if $numParametersEntered=3 an org, repo and branch name should be the values provided
+    case $numParametersEntered in
+        1)
+            echo "you passed 1 parameter to orgExists"
+            if [ $orgGithubCase == null ]
+            then
+                echo 'the org you specified cannot be found, please verify your org name and command syntax and try again. For instructions, please enter "gitmir -h"' 
+                exit 1
+            elif [ $orgGithubCase != null ]
+            then
+                echo "the org name you entered has been confirmed, continuing"
+                return
+            else
+                echo "the orgExists function encountered an unknown condition, please see \"gitmer -h\" for instructions on command usage and try again"
+                exit 1
+            fi
+            ;;
+        2)
+            echo "you passed 2 parameters to orgExists"
+            if [ $repoGithubCase == null ]
+            then
+                echo 'the repo you specified cannot be found, please verify your org name and command syntax and try again. For instructions, please enter "gitmir -h"' 
+                exit 1
+            elif [ $repoGithubCase != null ]
+            then
+                echo "the repo name you entered has been confirmed, continuing"
+                return
+            else
+                echo "the orgExists function encountered an unknown condition, please see \"gitmer -h\" for instructions on command usage and try again"
+                exit 1
+            fi
+            ;;
+        3)
+            echo "you passed 3 parameters to orgExists"
+            if [ $branchGithubCase == null ]
+            then
+                echo 'the branch you specified cannot be found, please verify your org name and command syntax and try again. For instructions, please enter "gitmir -h"' 
+                exit 1
+            elif [ $branchGithubCase != null ]
+            then
+                echo "the repo name you entered has been confirmed, continuing"
+                return
+            else
+                echo "the orgExists function encountered an unknown condition, please see \"gitmer -h\" for instructions on command usage and try again"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+function fileHandler
+# This function recieves a file with json formatted gitmir call parameters, processes each record to build a gitmir call for each record, and executes each call
+# Usage: fileHandler <filename.json> 
+{
+    for line in $(cat $1 | jq -c '.[]')
+    do
+        echo $line
+        org=$(echo $line | jq -r '.org')
+        org=$(echo "$org" | tr '[:upper:]' '[:lower:]')
+        echo "the value entered for org is: $org"
+        repo="$2"
+        repo=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
+        echo "the value entered for repo is: $repo"
+        branch="$3"
+        branch=$(echo "$branch" | tr '[:upper:]' '[:lower:]')
+        echo "calling gitmir $org $repo $branch"
+        gitmir $org $repo $branch
+        wait
+    done 
+}
+
+######## Main Block
+
+## If no parameters entered, or if more than 3 parameters entered, echo error string to stdout, call helpMenu, and exit
+echo "the number of parameters entered is $#"
+if [ $# -eq 0 ]
+# If no parameters entered
+then
+    # echo error message string, call helpMenut and exit 1
+    echo "No User Input Values Detected, please see the following help menu for instructions on proper gitmir command usage"
+    helpMenu
+    exit 1
+elif [ $# -ge 4 ]
+# if 4 or more parameters entered
+then 
+    # echo error message string, call helpMenu and exit 1
+    echo "More than 3 parameters were recieved which is invalid, please see the following help menu for instructions on proper gitmir command usage"
+    helpMenu
+    exit 1
+    echo "you did enter at least 1 input parameter"
+else 
+    echo "you entered between 1 and 3 parameters as required, continuing"
+fi
+
+## Clear help flag, or any erroneous flags
+# The "$@" value passed to flagHandler below reflects the user input entered when gitmir was called, which passes the user input to the flagHandler function
+flagHandler "$@"
+echo "you made it past flagHandler"
+
+## After help calls cleared above, we can now assign the user inputs to their corresponding global variables:
+echo "at least 1 parameter entered and no flags set, assigning user inputs to variables:"
+orgInput="$1"
+echo "the value entered for org is: $orgInput"
+repoInput="$2"
+echo "the value entered for repo is: $repoInput"
+branchInput="$3"
+echo "the value entered for branch is: $branchInput"
+numParametersEntered=$#
+echo the "value for numParametersEntered is: $#" 
+# the numParametersEntered variable should be populated with the number of parameters entered by the user when gitmir was called
+# per usage guidelines, if 1 parameter entered it should be the github org, if 2 parameters, should be org and repo, and if 3 values entered they should be org, repo and branch respectively
+
+## Confirm that the org, repo (if provided) and branch (if provided) exist, if not return error string and exit 1, if exist initialize updated variables with exact github case
+echo "beginning orgExists check, calling orgExists $orgInput $repoInput $branchInput"
+orgExists $orgInput $repoInput $branchInput
+echo "you have passed the orgExists function check"
+
+
+## call the isOrgInitialized function which sets the $orgInitialized=-1 if org has been initialized, else sets $orgInitialized=0
+echo "calling: isOrgInitialized $orgGithubCase"
+isOrgInitialized $orgGithubCase
+echo "orgInitialized=$orgInitialized"
+echo "you passed the org initializitation check block"
+
+## if user input value for repo provided and the associated org has been initialized, call the isRepoInitialized function which sets the $repoInitialized=-1 if org has been initialized, else sets $repoInitialized=0
+echo "starting the repo initialization check block"
+if [ $numParametersEntered -ge 2 ]
+then
+    echo "the repo initialize block says the number of parameters input by user is greater than or equal to 2"
+    if [ $orgInitialized -eq -1 ]
+    then
+        echo "the repo initialize block says the number of parameters input by user is greater than or equal to 2 and the org has been initialized"
+        echo "calling: isRepoInitialized $repoGithubCase"
+        isRepoInitialized $repoGithubCase
+        echo "repoInitialized=$repoInitialized"
+    fi
+fi
+echo "you passed the repo initialization check block"
+
+#### Run Block
+echo "entering the run block"
+## run the appropriate initGitmir or updateGitmir function call for the parameters entered
+if [ $orgInitialized -eq 0 ]
+# This if block runs if the org has not yet been initialized
+then
+    #a3-258) 2 & 5 & 8
+    echo "the run block says the org has not been initialized"
+    echo "calling initGitmir $orgGithubCase $repoGithubCase $branchGithubCase"
+    initGitmir $orgGithubCase $repoGithubCase $branchGithubCase
+    wait
+    echo "gitmir has completed initialization of $orgGithubCase $repoGithubCase $branchGithubCase"
+    exit 0
+elif [ $orgInitialized -eq -1 ]
+# this if block runs if the org has been initialized
+then
+    echo "the org you entered has been initialized and you have entered 2 or more inputs"
+    if [ $repoInitialized -eq -1 ]
+    then
+        echo "case: org initialized and repo initialized"
+        echo "the run block says that the $repoGithubCase repository has been initialized"
+        echo "calling updateGitmir $orgGithubCase $repoGithubCase $branchGithubCase to refresh fetch and merge the latest updates from Github"
+        updateGitmir $orgGithubCase $repoGithubCase $branchGithubCase
+        wait
+        echo "gitmir has updated the requested $orgGithubCase $repoGithubCase $branchGithubCase"
+        exit 0
+    elif [ $repoInitialized -eq 0 ]
+    then
+        # a3-47) 4 & 7
+        echo "the run block says that the $orgGithubCase organization has been initialized, but the $orgGithubCase/$repoGithubCase repository has not been initialized"
+        echo "calling initGitmir $orgGithubCase $repoGithubCase $branchGithubCase to initialize $orgGithubCase/$repoGithubCase"
+        updateGitmir $orgGithubCase $repoGithubCase $branchGithubCase
+        wait
+        echo "gitmir has completed initialization of $orgGithubCase $repoGithubCase $branchGithubCase"
+        exit 0
+    else
+        echo "the orgExists function encountered an unknown condition, please see \"gitmer -h\" for instructions on command usage and try again"
+        exit 1
+    fi
+fi
+
+echo "you made it to the end of the main block without hitting an exit point so some loop isnt closed, exiting now"
+exit 1
